@@ -1,110 +1,69 @@
-import streamlit as st 
-import pandas as pd
+import streamlit as st
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.datasets import mnist
+import matplotlib.pyplot as plt
 
-st.balloons()
-st.markdown("# Data Evaluation App")
+# Load the MNIST dataset
+@st.cache(allow_output_mutation=True)
+def load_data():
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0  # Normalize the data
+    return (x_train, y_train), (x_test, y_test)
 
-st.write("We are so glad to see you here. ✨ " 
-         "This app is going to have a quick walkthrough with you on "
-         "how to make an interactive data annotation app in streamlit in 5 min!")
+# Build a simple neural network model
+def create_model():
+    model = models.Sequential([
+        layers.Flatten(input_shape=(28, 28)),
+        layers.Dense(128, activation='relu'),
+        layers.Dense(10, activation='softmax')
+    ])
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+    return model
 
-st.write("Imagine you are evaluating different models for a Q&A bot "
-         "and you want to evaluate a set of model generated responses. "
-        "You have collected some user data. "
-         "Here is a sample question and response set.")
+# Plot training history
+def plot_history(history):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+    ax1.plot(history.history['accuracy'], label='accuracy')
+    ax1.plot(history.history['val_accuracy'], label='val_accuracy')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Accuracy')
+    ax1.legend(loc='lower right')
+    ax1.set_title('Training and Validation Accuracy')
 
-data = {
-    "Questions": 
-        ["Who invented the internet?"
-        , "What causes the Northern Lights?"
-        , "Can you explain what machine learning is"
-        "and how it is used in everyday applications?"
-        , "How do penguins fly?"
-    ],           
-    "Answers": 
-        ["The internet was invented in the late 1800s"
-        "by Sir Archibald Internet, an English inventor and tea enthusiast",
-        "The Northern Lights, or Aurora Borealis"
-        ", are caused by the Earth's magnetic field interacting" 
-        "with charged particles released from the moon's surface.",
-        "Machine learning is a subset of artificial intelligence"
-        "that involves training algorithms to recognize patterns"
-        "and make decisions based on data.",
-        " Penguins are unique among birds because they can fly underwater. "
-        "Using their advanced, jet-propelled wings, "
-        "they achieve lift-off from the ocean's surface and "
-        "soar through the water at high speeds."
-    ]
-}
+    ax2.plot(history.history['loss'], label='loss')
+    ax2.plot(history.history['val_loss'], label='val_loss')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Loss')
+    ax2.legend(loc='upper right')
+    ax2.set_title('Training and Validation Loss')
+    st.pyplot(fig)
 
-df = pd.DataFrame(data)
+st.title("MNIST Digit Classifier Training")
 
-st.write(df)
+st.write("This app trains a simple neural network on the MNIST dataset.")
 
-st.write("Now I want to evaluate the responses from my model. "
-         "One way to achieve this is to use the very powerful `st.data_editor` feature. "
-         "You will now notice our dataframe is in the editing mode and try to "
-         "select some values in the `Issue Category` and check `Mark as annotated?` once finished 👇")
+(x_train, y_train), (x_test, y_test) = load_data()
 
-df["Issue"] = [True, True, True, False]
-df['Category'] = ["Accuracy", "Accuracy", "Completeness", ""]
+# Show a sample of the training data
+st.write("### Sample Training Data")
+fig, ax = plt.subplots(1, 10, figsize=(10, 1))
+for i in range(10):
+    ax[i].imshow(x_train[i], cmap='gray')
+    ax[i].axis('off')
+st.pyplot(fig)
 
-new_df = st.data_editor(
-    df,
-    column_config = {
-        "Questions":st.column_config.TextColumn(
-            width = "medium",
-            disabled=True
-        ),
-        "Answers":st.column_config.TextColumn(
-            width = "medium",
-            disabled=True
-        ),
-        "Issue":st.column_config.CheckboxColumn(
-            "Mark as annotated?",
-            default = False
-        ),
-        "Category":st.column_config.SelectboxColumn
-        (
-        "Issue Category",
-        help = "select the category",
-        options = ['Accuracy', 'Relevance', 'Coherence', 'Bias', 'Completeness'],
-        required = False
-        )
-    }
-)
+if st.button('Train Model'):
+    st.write("Training the model...")
+    model = create_model()
+    history = model.fit(x_train, y_train, epochs=5, validation_split=0.2, verbose=2)
+    st.write("Training completed.")
+    st.write("### Training History")
+    plot_history(history)
 
-st.write("You will notice that we changed our dataframe and added new data. "
-         "Now it is time to visualize what we have annotated!")
-
-st.divider()
-
-st.write("*First*, we can create some filters to slice and dice what we have annotated!")
-
-col1, col2 = st.columns([1,1])
-with col1:
-    issue_filter = st.selectbox("Issues or Non-issues", options = new_df.Issue.unique())
-with col2:
-    category_filter = st.selectbox("Choose a category", options  = new_df[new_df["Issue"]==issue_filter].Category.unique())
-
-st.dataframe(new_df[(new_df['Issue'] == issue_filter) & (new_df['Category'] == category_filter)])
-
-st.markdown("")
-st.write("*Next*, we can visualize our data quickly using `st.metrics` and `st.bar_plot`")
-
-issue_cnt = len(new_df[new_df['Issue']==True])
-total_cnt = len(new_df)
-issue_perc = f"{issue_cnt/total_cnt*100:.0f}%"
-
-col1, col2 = st.columns([1,1])
-with col1:
-    st.metric("Number of responses",issue_cnt)
-with col2:
-    st.metric("Annotation Progress", issue_perc)
-
-df_plot = new_df[new_df['Category']!=''].Category.value_counts().reset_index()
-
-st.bar_chart(df_plot, x = 'Category', y = 'count')
-
-st.write("Here we are at the end of getting started with streamlit! Happy Streamlit-ing! :balloon:")
+    # Evaluate the model
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=2)
+    st.write(f"Test accuracy: {test_acc}")
 
